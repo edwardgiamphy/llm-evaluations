@@ -1,0 +1,73 @@
+# ============================================================
+#  docker-compose.staging.yml
+#  Usage : docker compose -f docker-compose.staging.yml up -d
+# ============================================================
+
+name: mon-api-staging
+
+services:
+  api:
+    image: ghcr.io/TON-ORG/TON-REPO:latest    # ← Remplace TON-ORG/TON-REPO
+    container_name: mon-api-staging
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - ENVIRONMENT=staging
+      - DATABASE_URL=${DATABASE_URL}
+      - REDIS_URL=${REDIS_URL}
+      - SECRET_KEY=${SECRET_KEY}
+    env_file:
+      - .env.staging                           # Fichier local sur le serveur (jamais dans git!)
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.api-staging.rule=Host(`staging.ton-api.com`)"
+      - "traefik.http.routers.api-staging.tls=true"
+      - "traefik.http.routers.api-staging.tls.certresolver=letsencrypt"
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: postgres-staging
+    restart: unless-stopped
+    volumes:
+      - postgres_staging_data:/var/lib/postgresql/data
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: redis-staging
+    restart: unless-stopped
+    volumes:
+      - redis_staging_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_staging_data:
+  redis_staging_data:
+
+networks:
+  default:
+    name: staging-network
