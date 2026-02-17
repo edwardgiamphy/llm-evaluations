@@ -29,7 +29,6 @@ dev = [
     "pytest>=8.0",
     "pytest-cov>=5.0",
     "ruff>=0.4",
-    "black>=24.0",
     "mypy>=1.10",
     "bandit>=1.7",
     "pip-audit>=2.7",
@@ -38,22 +37,17 @@ dev = [
 ]
 
 # ── Code quality tools ─────────────────────────────────────
-
-[tool.black]
-line-length = 88
-target-version = ["py311", "py312"]
-include = '\.pyi?$'
-exclude = '''
-/(
-    \.git
-  | \.venv
-  | __pycache__
-)/
-'''
+# Ruff handles both linting AND formatting (replaces black + isort)
 
 [tool.ruff]
 line-length = 88
 target-version = "py312"
+exclude = [
+    ".venv",
+    "__pycache__",
+]
+
+[tool.ruff.lint]
 select = [
     "E",    # pycodestyle errors
     "W",    # pycodestyle warnings
@@ -65,13 +59,15 @@ select = [
     "N",    # pep8-naming
 ]
 ignore = [
-    "E501",  # line too long (handled by black)
+    "E501",  # line too long (handled by ruff format)
     "B008",  # do not perform function calls in default arguments
+    "N812",  # lowercase imported as non-lowercase (torch.nn.functional as F is standard)
 ]
-exclude = [
-    ".venv",
-    "__pycache__",
-]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+docstring-code-format = true
 
 [tool.mypy]
 python_version = "3.12"
