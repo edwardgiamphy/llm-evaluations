@@ -1,450 +1,110 @@
 # ============================================================
-#  CI/CD Pipeline — Python Backend API (FastAPI / Django / Flask)
-#  Plateforme : GitHub Actions
-#  Auteur     : Généré par Claude
+#  CI/CD Pipeline — LLM Evaluations
+#  Platform : GitHub Actions
 # ============================================================
 #
-#  STRUCTURE DU PIPELINE :
-#  ┌─────────┐   ┌──────────┐   ┌──────────┐   ┌──────────┐   ┌──────────┐
-#  │  Lint   │──▶│  Test    │──▶│  Build   │──▶│ Staging  │──▶│   Prod   │
-#  │  & Format│   │  & Cover │   │  Docker  │   │  Deploy  │   │  Deploy  │
-#  └─────────┘   └──────────┘   └──────────┘   └──────────┘   └──────────┘
+#  PIPELINE STRUCTURE :
+#  ┌─────────────┐   ┌──────────────┐
+#  │ Lint &      │   │ Security     │
+#  │ Format      │   │ Scan         │
+#  └─────────────┘   └──────────────┘
 #
-#  DÉCLENCHEURS :
-#    - Push sur 'main'    → CI complet + déploiement Staging
-#    - Push sur 'develop' → CI complet uniquement
-#    - Pull Request       → CI complet (lint + tests)
-#    - Tag 'v*.*.*'       → CI complet + déploiement Production
+#  TRIGGERS :
+#    - Push on 'main' or 'develop'
+#    - Pull Request targeting 'main' or 'develop'
 #
 # ============================================================
 
-name: 🐍 Python API — CI/CD Pipeline
+name: 🐍 LLM Evaluations — CI
 
 on:
   push:
     branches:
       - main
       - develop
-    tags:
-      - "v*.*.*"
   pull_request:
     branches:
       - main
       - develop
 
-# Annule les runs précédents sur la même branche pour économiser les minutes
+# Cancel previous runs on the same branch to save Actions minutes
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-# Variables globales partagées entre les jobs
 env:
   PYTHON_VERSION: "3.12"
-  IMAGE_NAME: ${{ github.repository }}          # ex: mon-org/mon-api
-  REGISTRY: ghcr.io                             # GitHub Container Registry (gratuit)
 
 # ============================================================
 # JOB 1 — LINT & FORMAT
-# Vérifie la qualité et le style du code avant de lancer les tests
+# Checks code quality and style with Ruff (linter + formatter)
 # ============================================================
 jobs:
   lint:
     name: 🔍 Lint & Format
     runs-on: ubuntu-latest
     steps:
-      - name: 📥 Checkout du code
+      - name: 📥 Checkout code
         uses: actions/checkout@v4
 
-      - name: 🐍 Installer Python ${{ env.PYTHON_VERSION }}
+      - name: 🐍 Set up Python ${{ env.PYTHON_VERSION }}
         uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
-          cache: "pip"                          # Cache pip automatique
+          cache: "pip"
 
-      - name: 📦 Installer les outils de qualité
+      - name: 📦 Install quality tools
         run: |
           pip install --upgrade pip
           pip install ruff mypy
 
-      - name: ✨ Vérifier le formatage (Ruff format)
+      - name: ✨ Check formatting (Ruff format)
         run: ruff format --check --diff .
 
-      - name: 🔎 Linting (Ruff)
+      - name: 🔎 Lint (Ruff)
         run: ruff check .
 
-      - name: 🏷️ Vérification des types (Mypy)
-        # Mypy est optionnel — retire cette étape si tu n'utilises pas les type hints
+      - name: 🏷️ Type check (Mypy)
         run: mypy . --ignore-missing-imports
-        continue-on-error: true               # Ne bloque pas le pipeline si mypy échoue
+        continue-on-error: true   # Non-blocking — no type annotations yet
 
 # ============================================================
-# JOB 2 — TESTS & COUVERTURE
-# Lance les tests sur plusieurs versions Python en parallèle
-# ============================================================
-  test:
-    name: 🧪 Tests (Python ${{ matrix.python-version }})
-    runs-on: ubuntu-latest
-    needs: lint                                # Attend que le lint réussisse
-
-    # Test matriciel sur plusieurs versions Python
-    strategy:
-      fail-fast: false                         # Continue même si une version échoue
-      matrix:
-        python-version: ["3.11", "3.12"]
-
-    # Services Docker annexes (base de données, cache…)
-    services:
-      postgres:
-        image: postgres:16-alpine
-        env:
-          POSTGRES_USER: testuser
-          POSTGRES_PASSWORD: testpass
-          POSTGRES_DB: testdb
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-
-      redis:
-        image: redis:7-alpine
-        ports:
-          - 6379:6379
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-
-    env:
-      # Variables d'environnement pour les tests
-      DATABASE_URL: postgresql://testuser:testpass@localhost:5432/testdb
-      REDIS_URL: redis://localhost:6379
-      ENVIRONMENT: test
-      SECRET_KEY: test-secret-key-not-used-in-prod
-
-    steps:
-      - name: 📥 Checkout du code
-        uses: actions/checkout@v4
-
-      - name: 🐍 Installer Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python-version }}
-          cache: "pip"
-
-      - name: 📦 Installer les dépendances
-        run: |
-          pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install -r requirements-dev.txt   # dépendances de test (pytest, etc.)
-
-      - name: 🗃️ Appliquer les migrations
-        # Pour Django : python manage.py migrate
-        # Pour Alembic (FastAPI/SQLAlchemy) :
-        run: |
-          # Décommente la ligne correspondant à ton framework :
-          # python manage.py migrate                          # Django
-          # alembic upgrade head                             # FastAPI + Alembic
-          echo "⚠️  Configure ici ta commande de migration"
-
-      - name: 🧪 Lancer les tests avec couverture
-        run: |
-          pytest \
-            --cov=app \
-            --cov-report=xml \
-            --cov-report=term-missing \
-            --cov-fail-under=80 \              # Bloque si couverture < 80%
-            -v \
-            --tb=short \
-            tests/
-
-      - name: 📊 Uploader le rapport de couverture (Codecov)
-        uses: codecov/codecov-action@v4
-        if: matrix.python-version == env.PYTHON_VERSION   # Upload une seule fois
-        with:
-          file: ./coverage.xml
-          token: ${{ secrets.CODECOV_TOKEN }}  # Optionnel pour repos publics
-          fail_ci_if_error: false
-
-# ============================================================
-# JOB 3 — SCAN DE SÉCURITÉ
-# Détecte les vulnérabilités dans les dépendances et le code
+# JOB 2 — SECURITY SCAN
+# Detects vulnerabilities in dependencies and source code
 # ============================================================
   security:
-    name: 🔒 Scan de sécurité
+    name: 🔒 Security Scan
     runs-on: ubuntu-latest
-    needs: lint
     steps:
-      - name: 📥 Checkout du code
+      - name: 📥 Checkout code
         uses: actions/checkout@v4
 
-      - name: 🐍 Installer Python
+      - name: 🐍 Set up Python ${{ env.PYTHON_VERSION }}
         uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: "pip"
 
-      - name: 📦 Installer les dépendances
-        run: pip install -r requirements.txt
+      - name: 📦 Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
 
-      - name: 🛡️ Scanner les vulnérabilités (pip-audit)
+      - name: 🛡️ Dependency vulnerability scan (pip-audit)
         run: |
           pip install pip-audit
           pip-audit --requirement requirements.txt
 
-      - name: 🔍 Analyse statique de sécurité (Bandit)
+      - name: 🔍 Static security analysis (Bandit)
         run: |
           pip install bandit[toml]
-          bandit -r app/ -c pyproject.toml
-        continue-on-error: true               # Warning, pas bloquant
+          bandit -r notebooks/ -c pyproject.toml
+        continue-on-error: true   # Warning only — not blocking
 
-      - name: 🐳 Scanner l'image Docker (Trivy)
+      - name: 🐳 Filesystem vulnerability scan (Trivy)
         uses: aquasecurity/trivy-action@master
         with:
           scan-type: "fs"
           scan-ref: "."
           severity: "CRITICAL,HIGH"
-          exit-code: "0"                      # Mettre "1" pour bloquer sur vulnérabilités
-
-# ============================================================
-# JOB 4 — BUILD DOCKER
-# Construit et publie l'image sur GitHub Container Registry
-# ============================================================
-  build:
-    name: 🐳 Build & Push Docker
-    runs-on: ubuntu-latest
-    needs: [test, security]                   # Attend tests ET sécurité
-    # Ne build que sur main ou un tag de release (pas sur les PR)
-    if: github.event_name != 'pull_request'
-
-    permissions:
-      contents: read
-      packages: write                         # Nécessaire pour pousser sur ghcr.io
-
-    outputs:
-      image-tag: ${{ steps.meta.outputs.tags }}
-      image-digest: ${{ steps.build.outputs.digest }}
-
-    steps:
-      - name: 📥 Checkout du code
-        uses: actions/checkout@v4
-
-      - name: 🔧 Configurer Docker Buildx (builds multi-plateforme)
-        uses: docker/setup-buildx-action@v3
-
-      - name: 🔐 Se connecter à GitHub Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }} # Token automatique, pas de config!
-
-      - name: 🏷️ Générer les tags et labels Docker
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          tags: |
-            # Tag sur le SHA du commit (toujours)
-            type=sha,prefix=sha-
-            # Tag 'latest' uniquement sur main
-            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
-            # Tag sémantique pour les releases (v1.2.3)
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-
-      - name: 🔨 Build et push de l'image Docker
-        id: build
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha                # Cache GitHub Actions (rapide)
-          cache-to: type=gha,mode=max
-          platforms: linux/amd64,linux/arm64  # Multi-arch (compatible Apple Silicon)
-          build-args: |
-            BUILD_DATE=${{ github.run_id }}
-            GIT_COMMIT=${{ github.sha }}
-
-# ============================================================
-# JOB 5 — DÉPLOIEMENT STAGING
-# Déploie automatiquement sur l'environnement de staging
-# ============================================================
-  deploy-staging:
-    name: 🚀 Deploy → Staging
-    runs-on: ubuntu-latest
-    needs: build
-    # Staging = uniquement sur main (pas sur les tags de release)
-    if: github.ref == 'refs/heads/main'
-
-    environment:
-      name: staging
-      url: https://staging.ton-api.com        # ← Remplace par ton URL staging
-
-    steps:
-      - name: 📥 Checkout du code
-        uses: actions/checkout@v4
-
-      # ── Option A : Déploiement SSH vers un VPS ───────────────────
-      - name: 🖥️ Déployer sur VPS via SSH
-        uses: appleboy/ssh-action@v1
-        with:
-          host: ${{ secrets.STAGING_HOST }}
-          username: ${{ secrets.STAGING_USER }}
-          key: ${{ secrets.STAGING_SSH_KEY }}
-          script: |
-            cd /opt/mon-api
-            docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
-            docker compose -f docker-compose.staging.yml up -d --no-deps api
-            docker system prune -f
-
-      # ── Option B : Déploiement Kubernetes ────────────────────────
-      # - name: ☸️ Déployer sur Kubernetes
-      #   uses: azure/k8s-deploy@v4
-      #   with:
-      #     namespace: staging
-      #     images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:sha-${{ github.sha }}
-      #     manifests: k8s/staging/
-
-      # ── Option C : AWS ECS ───────────────────────────────────────
-      # - name: ☁️ Déployer sur AWS ECS
-      #   uses: aws-actions/amazon-ecs-deploy-task-definition@v1
-      #   with:
-      #     task-definition: .aws/task-definition-staging.json
-      #     service: mon-api-staging
-      #     cluster: mon-cluster
-
-      - name: ✅ Smoke test Staging
-        run: |
-          sleep 15   # Attendre que le service démarre
-          curl --fail --retry 3 --retry-delay 5 \
-            https://staging.ton-api.com/health
-
-      - name: 📣 Notifier Slack (succès)
-        if: success()
-        uses: slackapi/slack-github-action@v1
-        with:
-          payload: |
-            {
-              "text": "✅ *Staging déployé* — `${{ github.ref_name }}` par ${{ github.actor }}"
-            }
-        env:
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-
-      - name: 🚨 Notifier Slack (échec)
-        if: failure()
-        uses: slackapi/slack-github-action@v1
-        with:
-          payload: |
-            {
-              "text": "❌ *Staging FAILED* — `${{ github.ref_name }}` — <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|Voir les logs>"
-            }
-        env:
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-
-# ============================================================
-# JOB 6 — DÉPLOIEMENT PRODUCTION
-# Déploie en production uniquement sur un tag v*.*.*
-# avec approbation manuelle obligatoire
-# ============================================================
-  deploy-production:
-    name: 🌍 Deploy → Production
-    runs-on: ubuntu-latest
-    needs: build
-    # Production = uniquement sur les tags de release (ex: v1.2.3)
-    if: startsWith(github.ref, 'refs/tags/v')
-
-    environment:
-      name: production                        # Configure les reviewers dans GitHub Settings
-      url: https://api.ton-domaine.com        # ← Remplace par ton URL production
-
-    steps:
-      - name: 📥 Checkout du code
-        uses: actions/checkout@v4
-
-      # ── Option A : Déploiement SSH avec rollback ──────────────────
-      - name: 🌍 Déployer en production via SSH
-        uses: appleboy/ssh-action@v1
-        with:
-          host: ${{ secrets.PROD_HOST }}
-          username: ${{ secrets.PROD_USER }}
-          key: ${{ secrets.PROD_SSH_KEY }}
-          script: |
-            cd /opt/mon-api
-            # Sauvegarder l'image actuelle pour rollback
-            CURRENT_TAG=$(docker inspect --format='{{index .RepoTags 0}}' mon-api-prod 2>/dev/null || echo "none")
-            echo "Image précédente : $CURRENT_TAG"
-
-            # Déployer la nouvelle version
-            docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.ref_name }}
-            docker compose -f docker-compose.prod.yml up -d --no-deps api
-
-            # Smoke test — rollback automatique si échec
-            sleep 20
-            if ! curl --fail --silent https://api.ton-domaine.com/health; then
-              echo "🚨 Smoke test échoué, rollback en cours..."
-              docker compose -f docker-compose.prod.yml stop api
-              docker tag $CURRENT_TAG ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
-              docker compose -f docker-compose.prod.yml up -d --no-deps api
-              exit 1
-            fi
-            echo "✅ Production déployée avec succès!"
-
-      - name: ✅ Smoke test Production
-        run: |
-          curl --fail --retry 5 --retry-delay 10 \
-            https://api.ton-domaine.com/health
-
-      - name: 🏷️ Créer une GitHub Release
-        uses: softprops/action-gh-release@v1
-        with:
-          generate_release_notes: true        # Génère les notes depuis les commits
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: 📣 Notifier l'équipe (production déployée)
-        if: success()
-        uses: slackapi/slack-github-action@v1
-        with:
-          payload: |
-            {
-              "text": "🚀 *Production déployée* — Version `${{ github.ref_name }}` par ${{ github.actor }}\n<${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ github.ref_name }}|Voir la Release>"
-            }
-        env:
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-
-# ============================================================
-# FIN DU PIPELINE
-# ============================================================
-#
-#  SECRETS À CONFIGURER dans GitHub → Settings → Secrets :
-#  ┌─────────────────────────┬──────────────────────────────────────────┐
-#  │ Secret                  │ Description                              │
-#  ├─────────────────────────┼──────────────────────────────────────────┤
-#  │ STAGING_HOST            │ IP ou domaine du serveur staging         │
-#  │ STAGING_USER            │ Utilisateur SSH staging                  │
-#  │ STAGING_SSH_KEY         │ Clé privée SSH staging                   │
-#  │ PROD_HOST               │ IP ou domaine du serveur production      │
-#  │ PROD_USER               │ Utilisateur SSH production               │
-#  │ PROD_SSH_KEY            │ Clé privée SSH production                │
-#  │ SLACK_WEBHOOK_URL       │ Webhook Slack pour les notifications     │
-#  │ CODECOV_TOKEN           │ Token Codecov (optionnel, repos publics) │
-#  └─────────────────────────┴──────────────────────────────────────────┘
-#
-#  FICHIERS À CRÉER DANS TON PROJET :
-#  ├── .github/
-#  │   └── workflows/
-#  │       └── ci-cd.yml                ← CE FICHIER
-#  ├── Dockerfile                       ← Image Docker de ton API
-#  ├── docker-compose.staging.yml       ← Config staging
-#  ├── docker-compose.prod.yml          ← Config production
-#  ├── requirements.txt                 ← Dépendances de prod
-#  ├── requirements-dev.txt             ← pytest, coverage, etc.
-#  └── pyproject.toml                   ← Config ruff/black/mypy
-#
-# ============================================================
+          exit-code: "0"          # Set to "1" to block on findings
