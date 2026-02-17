@@ -73,6 +73,19 @@ Choice D : "...disappeared into thin air."
 | **Dataset** | SWAG `val.csv` — 17 992 examples, configurable sample size |
 | **Model** | `bert-base-uncased` — 110M parameters, no fine-tuning |
 
+#### Notebook structure (8 sections, 25 cells)
+
+| Section | Content |
+|---------|---------|
+| **1. Configuration** | Paths, model name, sample size, device detection, random seed |
+| **2. Load & Explore** | Load SWAG CSV, build premise column, label distribution plot, random baseline |
+| **3. Model Loading** | Download `bert-base-uncased`, move to GPU if available, param count |
+| **4. Zero-Shot Scoring** | `score_endings()` function — tokenize pairs, return `logit[1]` as plausibility |
+| **5. Run Evaluation** | Iterate examples, `argmax` over scores, track predictions vs. gold labels |
+| **6. Results** | Overall & per-label accuracy, score KDE plots, confusion matrix |
+| **7. Error Analysis** | Top-5 most confident errors with premise and continuation pairs |
+| **8. Summary** | Results table, key takeaways, next steps (fine-tuning, larger models, OOD benchmarks) |
+
 #### Analyses included
 
 - Label distribution and random baseline (25%)
@@ -110,16 +123,17 @@ jupyter notebook notebooks/
 
 ## CI/CD
 
-The repository includes a production-grade GitHub Actions pipeline:
+The repository includes a lightweight GitHub Actions pipeline that runs on every push and pull request:
 
-| Stage | Description |
-|-------|-------------|
-| Lint & Format | Ruff (linting + formatting), Mypy |
-| Tests | Pytest with coverage (Python 3.11 & 3.12 matrix) |
-| Security | pip-audit, Bandit, Trivy |
-| Docker Build | Multi-platform image (amd64 + arm64) → GHCR |
-| Staging Deploy | Automated on `main` branch |
-| Production Deploy | Manual approval on `v*.*.*` tags |
+| Job | Description |
+|-----|-------------|
+| 🔍 **Lint & Format** | Ruff (linting + formatting), Mypy type checking (non-blocking) |
+| 🔒 **Security Scan** | pip-audit (dependencies), Bandit (code), Trivy (filesystem) |
+
+**Triggers:**
+- `push` on `main` or `develop` branches
+- Pull requests targeting `main` or `develop`
+- Runs in parallel with concurrency control to cancel stale builds
 
 ## Tech Stack
 
@@ -129,10 +143,9 @@ The repository includes a production-grade GitHub Actions pipeline:
 - **Pandas / NumPy** — Data handling
 - **Seaborn / Matplotlib** — Visualization
 - **scikit-learn** — Evaluation metrics
-- **Ruff** — Linting & formatting (replaces Black + isort)
-- **Pytest** — Testing
-- **Docker** — Containerization
-- **GitHub Actions** — CI/CD
+- **Ruff** — Linting & formatting (unified tool, replaces Black + isort)
+- **Mypy** — Static type checking
+- **GitHub Actions** — Lightweight CI/CD (lint + security)
 
 ## License
 
